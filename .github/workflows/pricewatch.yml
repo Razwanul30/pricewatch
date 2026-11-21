@@ -1,0 +1,87 @@
+name: PriceWatch Cloud Monitor
+
+on:
+  schedule:
+    # Run hourly at minute 25 to reduce top-of-hour congestion on GitHub Actions runners
+    - cron: '25 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: pricewatch-monitoring
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  monitor:
+    name: Run Price & Stock Monitor
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout public code repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private state repository
+        uses: actions/checkout@v4
+        with:
+          repository: Razwanul30/pricewatch-state
+          token: ${{ secrets.STATE_REPO_TOKEN }}
+          path: .state-repo
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Stage configuration and state
+        run: |
+          mkdir -p data
+          if [ -f .state-repo/products.json ]; then
+            cp .state-repo/products.json products.json
+            echo "Loaded products.json from state repository."
+          else
+            echo "Error: products.json not found in state repository." >&2
+            exit 1
+          fi
+
+          if [ -f .state-repo/data/price_history.csv ]; then
+            cp .state-repo/data/price_history.csv data/price_history.csv
+            echo "Loaded existing price history from state repository."
+          else
+            echo "No existing price history found. A new history file will be initialized."
+          fi
+
+      - name: Run PriceWatch monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python main.py
+
+      - name: Persist updated state to private repository
+        if: success()
+        run: |
+          mkdir -p .state-repo/data
+          if [ -f data/price_history.csv ]; then
+            cp data/price_history.csv .state-repo/data/price_history.csv
+          fi
+
+          cd .state-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            git add data/price_history.csv
+            git commit -m "Update price history [skip ci]"
+            git push
+            echo "Successfully committed and pushed updated state to Razwanul30/pricewatch-state."
+          else
+            echo "No state changes detected. Nothing to commit."
+          fi

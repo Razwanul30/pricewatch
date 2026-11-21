@@ -35,7 +35,10 @@ pricewatch/
 ├── logs/
 │   └── pricewatch.log   # Application log file (automatically rotated)
 ├── tests/
-│   └── test_monitor.py  # Unit and integration test suite (24 tests)
+│   └── test_monitor.py  # Unit and integration test suite (27 tests)
+├── .github/
+│   └── workflows/
+│       └── pricewatch.yml  # GitHub Actions cloud scheduling workflow
 └── README.md            # Documentation
 ```
 
@@ -180,6 +183,64 @@ When running via `cron`, long-running or delayed monitoring runs could theoretic
   `Another PriceWatch instance is currently running. Skipping execution to avoid overlap.`
   and exits cleanly with status `SKIPPED`.
 - **Stale Lock Recovery**: If a prior process terminated unexpectedly or crashed, PriceWatch inspects the locked PID via `os.kill(pid, 0)`. If the process is no longer alive or the lock has exceeded 30 minutes, it automatically reclaims the lock and continues without requiring manual intervention.
+
+---
+
+## GitHub Actions Cloud Scheduling
+
+PriceWatch can run automatically on GitHub-hosted runners every hour, even when your laptop is off.
+
+### How it works
+
+The workflow (`.github/workflows/pricewatch.yml`):
+
+1. Checks out your public code repository (`Razwanul30/pricewatch`).
+2. Checks out your private state repository (`Razwanul30/pricewatch-state`) which holds `products.json` and `data/price_history.csv`.
+3. Copies those files into the expected paths before running the monitor.
+4. Runs `python main.py` with Telegram credentials injected from GitHub Actions Secrets.
+5. On success, commits any changes to `price_history.csv` back to the private state repository.
+
+### Required GitHub Actions Secrets
+
+Configure these in **Settings → Secrets and variables → Actions** of your public repository (`Razwanul30/pricewatch`):
+
+| Secret | Description |
+|--------|-------------|
+| `STATE_REPO_TOKEN` | Fine-grained PAT with **Contents: Read and Write** permission on `Razwanul30/pricewatch-state` |
+| `TELEGRAM_BOT_TOKEN` | Your Telegram bot API token |
+| `TELEGRAM_CHAT_ID` | Your Telegram chat ID |
+
+> **Note**: No `.env` file is needed in the GitHub Actions environment. `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are injected directly as environment variables from secrets.
+
+### Private State Repository Structure
+
+`Razwanul30/pricewatch-state` must contain:
+
+```text
+products.json         # Your tracked products list
+data/
+  price_history.csv   # Created automatically on first successful run
+```
+
+To add or remove tracked products, edit `products.json` directly in `Razwanul30/pricewatch-state`.
+
+### Trigger Schedule
+
+The workflow runs automatically at **minute 25 of every hour** (`25 * * * *`). This avoids the top-of-hour congestion on GitHub's shared infrastructure.
+
+### Manual Trigger
+
+Go to **Actions → PriceWatch Cloud Monitor → Run workflow** in your repository to trigger a run on demand at any time.
+
+### Concurrency Protection
+
+GitHub Actions prevents overlapping runs using a concurrency group (`pricewatch-monitoring`). If a run is already in progress when the next hourly schedule fires, the new run waits — it is not cancelled.
+
+### Limitations
+
+- **Scheduled runs may be delayed** by up to 10–15 minutes (or longer) during peak hours on GitHub's shared infrastructure. This is a GitHub platform limitation.
+- The workflow does not commit `products.json` back to the state repo — edit it directly in `Razwanul30/pricewatch-state` to add or remove tracked products.
+- Run logs are visible in the GitHub Actions console and are retained for 90 days (GitHub's default) before expiring.
 
 ---
 

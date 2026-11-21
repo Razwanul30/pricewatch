@@ -22,3 +22,7 @@ data/*.lock
 # Local product data and price history
 data/price_history.csv
 products.json
+
+# Private state repository checkouts
+.state-repo/
+state-repo/
