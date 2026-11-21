@@ -1,0 +1,24 @@
+# Environment secrets
+.env
+
+# Python & Virtual Environments
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing caches
+.pytest_cache/
+.coverage
+
+# Runtime logs and process locks
+logs/
+*.log
+*.lock
+data/*.lock
+
+# Local product data and price history
+data/price_history.csv
+products.json
